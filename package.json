@@ -1,0 +1,25 @@
+{
+  "name": "erasurefeed",
+  "description": "",
+  "version": "0.0.1",
+  "license": "",
+  "author": "Conlan Rios",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/conlan/erasurefeed.git"
+  },
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.16.3",
+    "web3": "^1.2.1"
+  },
+  "devDependencies": {
+    "mocha": "^6.1.4",
+    "supertest": "^4.0.2"
+  }
+}
