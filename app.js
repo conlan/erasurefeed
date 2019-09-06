@@ -80,13 +80,16 @@ app.get('/task/refresh', (req, res) => {
 							var variable_metadata = eventLog.returnValues.variableMetadata;
 							var blockNumber = eventLog.blockNumber;
 
+							console.log(operator)
+							console.log(proof_hash)
+							console.log(static_metadata)
+							console.log(variable_metadata)
 							console.log(blockNumber)
+							console.log("---")
 
 							// TODO kick off a processing task which looks up the metadata on IPFS
 							// TODO kick off a tweet task
 						}
-
-						// TODO store the fetch_to_block in datastore here
 					} else {
 						console.log(error);
 					}
