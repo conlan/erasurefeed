@@ -1,8 +1,11 @@
 'use strict';
 
 const fs = require('fs');
-const Web3 = require('web3')
 const {Firestore} = require('@google-cloud/firestore');
+const firestore = new Firestore();
+
+const Twitter = require('twitter');
+const twitter_client = new Twitter(JSON.parse(fs.readFileSync('twitter_credentials.json')));
 
 // TODO pull out into settings file
 var infura_project_id = ""
@@ -10,13 +13,13 @@ let post_factory_abi = JSON.parse(fs.readFileSync('post_factory_abi.json'));
 let post_factory_genesis_block_num = 8411564;
 let post_factory_address = "0x480b8d6b5C184C0E34AE66036cC5B4e0390EcA8A"
 
+const Web3 = require('web3')
 const web3 = new Web3(new Web3.providers.HttpProvider('https://mainnet.infura.io/v3/' + infura_project_id))
 
-// Create a new firestore client
-const firestore = new Firestore();
+
+
 
 const express = require('express');
-
 const app = express();
 
 const LOG_FETCH_COUNT = 250;
@@ -49,6 +52,24 @@ async function update_last_fetched_block(last_fetched_block_doc_ref, last_fetche
 	    "last_fetched_block" : last_fetched_block
 	});
 }
+
+app.get('/task/tweet', (req, res) => {	
+	var tweet_status = req.query.status;
+	if (tweet_status !== undefined) {
+		twitter_client.post('statuses/update', {status: req.query.status}, function(error, tweet, response) {
+		  	if(error) {
+		  		console.log(error)
+		  	} else {  			
+  				console.log(tweet);  // Tweet body.
+		  		console.log(response);  // Raw response object.
+		  	}
+		});
+	} else {
+		console.log("No tweet status found!")
+	}
+
+	res.status(200).send('{}').end();
+})
 
 app.get('/task/refresh', (req, res) => {
   	get_last_fetched_block().then(function(data) {

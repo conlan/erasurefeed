@@ -1,4 +1,9 @@
 .DS_STORE
+
 package-lock.json
+
 node_modules/
+
 test_local.sh
+
+twitter_credentials.json
