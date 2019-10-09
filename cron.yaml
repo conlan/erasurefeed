@@ -1,4 +1,4 @@
 cron:
 - description: "regular refresh job"
   url: /task/refresh
-  schedule: every 30 minutes
+  schedule: every 300 hours
