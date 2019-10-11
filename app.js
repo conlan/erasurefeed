@@ -4,8 +4,8 @@ const fs = require('fs');
 const {Firestore} = require('@google-cloud/firestore');
 const firestore = new Firestore();
 
-const {CloudTasksClient} = require('@google-cloud/tasks');
-const task_client = new CloudTasksClient();
+const {v2beta3} = require('@google-cloud/tasks');
+const task_client = new v2beta3.CloudTasksClient();
 const task_parent = task_client.queuePath('erasure-feed', 'us-central1', 'my-queue');
 
 const Twitter = require('twitter');
@@ -51,6 +51,8 @@ async function get_last_fetched_block(mode) {
 		last_fetched_block_num = last_fetched_block_doc.get("last_fetched_block")
 	}
 
+	// last_fetched_block_num = 8697280; // TODO Remove
+
 	return {
 		"last_fetched_block_doc_ref" : last_fetched_block_doc_ref,
 		"last_fetched_block" : last_fetched_block_num
@@ -65,22 +67,23 @@ async function update_last_fetched_block(last_fetched_block_doc_ref, last_fetche
 	});
 }
 
-function schedule_task(card_id, delay_in_seconds) {
-	var payload = {
-		card_id : card_id
-	}
+async function schedule_task(relative_uri, delay_in_seconds, payload) {
+	let headers = new Map();
+    headers.set("Content-Type", "application/json");    
 
-	const task = {
-    	appEngineHttpRequest: {
-      		httpMethod: 'POST',
-      		relativeUri: '/task/process/card',
-      		body : Buffer.from(JSON.stringify(payload)).toString('base64')
-    	},
-    	scheduleTime: {
-    		seconds: delay_in_seconds + Date.now() / 1000,		
-    	}
-    }
+    const task = {
+        appEngineHttpRequest: {
+            httpMethod: 'POST',
+            relativeUri: relative_uri,
+            headers: headers,
+            body: Buffer.from(JSON.stringify(payload)).toString('base64')
+        },
+    };
 
+ 	task.scheduleTime = {
+      seconds: delay_in_seconds + Date.now() / 1000,
+    };
+		
     const request = {
     	parent: task_parent,
     	task: task,
@@ -88,6 +91,11 @@ function schedule_task(card_id, delay_in_seconds) {
 
   	console.log('Sending task:');
   	console.log(task);
+
+  	const [response] = await task_client.createTask(request);
+  	const name = response.name;
+  	
+  	console.log('Created task ' + name)
 }
 
 function refresh_internal(mode, res) {
@@ -109,9 +117,21 @@ function refresh_internal(mode, res) {
 					toBlock :   fetch_to_block
 				}, function(error, logs){ 
 					if (error === null) {
+						var delay_in_seconds = 30;
+
 						for (var i = 0; i < logs.length; i++) {
+							// build the payload
+							var payload = {
+								card_id : logs[i].returnValues.cardId,
+								mode : mode
+							}
+
 							// kick off a processing task which looks up the card metadata 
-							schedule_task(logs[i].returnValues.cardId, 5)
+							schedule_task('/task/process/card', delay_in_seconds, payload);
+
+							delay_in_seconds += 70; // give more than a minute between tweets
+
+							break
 						}
 					} else {
 						console.log(error);
@@ -133,7 +153,7 @@ app.get('/', (req, res) => {
 	res.status(200).send('{}').end();
 });
 
-app.get('/task/process/card', (req, res) => {	
+app.post('/task/process/card', (req, res) => {	
 	res.status(200).send('{}').end();
 });
 
