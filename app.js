@@ -4,6 +4,10 @@ const fs = require('fs');
 const {Firestore} = require('@google-cloud/firestore');
 const firestore = new Firestore();
 
+const {CloudTasksClient} = require('@google-cloud/tasks');
+const task_client = new CloudTasksClient();
+const task_parent = task_client.queuePath('erasure-feed', 'us-central1', 'my-queue');
+
 const Twitter = require('twitter');
 // const twitter_client = new Twitter(JSON.parse(fs.readFileSync('twitter_credentials.json')));
 
@@ -36,10 +40,6 @@ function get_event_for_mode(mode) {
 	return null;
 }
 
-app.get('/', (req, res) => {
-	res.status(200).send('{}').end();
-});
-
 async function get_last_fetched_block(mode) {
 	var last_fetched_block_doc_ref = firestore.doc('settings/' + mode);
 
@@ -65,6 +65,31 @@ async function update_last_fetched_block(last_fetched_block_doc_ref, last_fetche
 	});
 }
 
+function schedule_task(card_id, delay_in_seconds) {
+	var payload = {
+		card_id : card_id
+	}
+
+	const task = {
+    	appEngineHttpRequest: {
+      		httpMethod: 'POST',
+      		relativeUri: '/task/process/card',
+      		body : Buffer.from(JSON.stringify(payload)).toString('base64')
+    	},
+    	scheduleTime: {
+    		seconds: delay_in_seconds + Date.now() / 1000,		
+    	}
+    }
+
+    const request = {
+    	parent: task_parent,
+    	task: task,
+  	}
+
+  	console.log('Sending task:');
+  	console.log(task);
+}
+
 function refresh_internal(mode, res) {
 	get_last_fetched_block(mode).then(function(data) {  
   		web3.eth.getBlockNumber(function(error, current_block){ 
@@ -85,14 +110,8 @@ function refresh_internal(mode, res) {
 				}, function(error, logs){ 
 					if (error === null) {
 						for (var i = 0; i < logs.length; i++) {
-							var eventLog = logs[i]
-
-							var cardId = eventLog.returnValues.cardId;
-
-							console.log(cardId + " " + mode)
-
-							// TODO kick off a processing task which looks up the metadata on IPFS
-							// TODO kick off a tweet task
+							// kick off a processing task which looks up the card metadata 
+							schedule_task(logs[i].returnValues.cardId, 5)
 						}
 					} else {
 						console.log(error);
@@ -110,7 +129,15 @@ function refresh_internal(mode, res) {
   	})
 }
 
-app.get('/task/tweet', (req, res) => {	
+app.get('/', (req, res) => {
+	res.status(200).send('{}').end();
+});
+
+app.get('/task/process/card', (req, res) => {	
+	res.status(200).send('{}').end();
+});
+
+app.get('/task/tweet', (req, res) => {
 	var tweet_status = req.query.status;
 	if (tweet_status !== undefined) {
 		// TODO
