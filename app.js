@@ -26,6 +26,16 @@ const modeType = {
     BURN: 'burns'
 }
 
+function get_event_for_mode(mode) {
+	if (mode === modeType.BURN) {
+		return "BurnTokenAndWithdrawCard"
+	} else if (mode === modeType.DEPOSIT) {
+		return "DepositCardAndMintToken"
+	}
+
+	return null;
+}
+
 app.get('/', (req, res) => {
 	res.status(200).send('{}').end();
 });
@@ -41,8 +51,6 @@ async function get_last_fetched_block(mode) {
 		last_fetched_block_num = last_fetched_block_doc.get("last_fetched_block")
 	}
 
-	last_fetched_block_num = 8695229; // TODO Remove
-
 	return {
 		"last_fetched_block_doc_ref" : last_fetched_block_doc_ref,
 		"last_fetched_block" : last_fetched_block_num
@@ -55,6 +63,51 @@ async function update_last_fetched_block(last_fetched_block_doc_ref, last_fetche
 	await last_fetched_block_doc_ref.set({
 	    "last_fetched_block" : last_fetched_block
 	});
+}
+
+function refresh_internal(mode, res) {
+	get_last_fetched_block(mode).then(function(data) {  
+  		web3.eth.getBlockNumber(function(error, current_block){ 
+		  if (error === null) {
+		    	var fetch_to_block = data.last_fetched_block + LOG_FETCH_COUNT;
+
+		    	// don't fetch up to the very latest block
+		    	fetch_to_block = Math.min(fetch_to_block, current_block - 10)
+
+		    	console.log("Fetching logs from block " + data.last_fetched_block + " to " + fetch_to_block + "...")
+
+		    	var wmc_card_contract = new web3.eth.Contract(wmc_card_abi, wmc_card_address);	    	
+
+				wmc_card_contract.getPastEvents(get_event_for_mode(mode), {
+				    filter: {},
+				    fromBlock : data.last_fetched_block,
+					toBlock :   fetch_to_block
+				}, function(error, logs){ 
+					if (error === null) {
+						for (var i = 0; i < logs.length; i++) {
+							var eventLog = logs[i]
+
+							var cardId = eventLog.returnValues.cardId;
+
+							console.log(cardId + " " + mode)
+
+							// TODO kick off a processing task which looks up the metadata on IPFS
+							// TODO kick off a tweet task
+						}
+					} else {
+						console.log(error);
+					}
+
+					update_last_fetched_block(data.last_fetched_block_doc_ref, fetch_to_block + 1).then(function() {
+						res.status(200).send('{}').end();
+						console.log("Done");
+					})
+				});
+			} else {
+				console.log(error)
+			}
+		});	  
+  	})
 }
 
 app.get('/task/tweet', (req, res) => {	
@@ -77,93 +130,11 @@ app.get('/task/tweet', (req, res) => {
 })
 
 app.get('/task/refresh/burns', (req, res) => {
-  	get_last_fetched_block(modeType.BURN).then(function(data) {  
-  		web3.eth.getBlockNumber(function(error, current_block){ 
-		  if (error === null) {
-		    	var fetch_to_block = data.last_fetched_block + LOG_FETCH_COUNT;
-
-		    	// don't fetch up to the very latest block
-		    	fetch_to_block = Math.min(fetch_to_block, current_block - 10)
-
-		    	console.log("Fetching logs from block " + data.last_fetched_block + " to " + fetch_to_block + "...")
-
-		    	var wmc_card_contract = new web3.eth.Contract(wmc_card_abi, wmc_card_address);	    	
-
-				wmc_card_contract.getPastEvents('BurnTokenAndWithdrawCard', {
-				    filter: {},
-				    fromBlock : data.last_fetched_block,
-					toBlock :   fetch_to_block
-				}, function(error, logs){ 
-					if (error === null) {
-						for (var i = 0; i < logs.length; i++) {
-							var eventLog = logs[i]
-
-							var cardId = eventLog.returnValues.cardId;
-
-							console.log(cardId + " Burned")							
-
-							// TODO kick off a processing task which looks up the metadata on IPFS
-							// TODO kick off a tweet task
-						}
-					} else {
-						console.log(error);
-					}
-
-					update_last_fetched_block(data.last_fetched_block_doc_ref, fetch_to_block + 1).then(function() {
-						res.status(200).send('{}').end();
-						console.log("Done");
-					})
-				});
-			} else {
-				console.log(error)
-			}
-		});	  
-  	})
+	refresh_internal(modeType.BURN, res)
 });
 
 app.get('/task/refresh/deposits', (req, res) => {
-  	get_last_fetched_block(modeType.DEPOSIT).then(function(data) {  
-  		web3.eth.getBlockNumber(function(error, current_block){ 
-		  if (error === null) {
-		    	var fetch_to_block = data.last_fetched_block + LOG_FETCH_COUNT;
-
-		    	// don't fetch up to the very latest block
-		    	fetch_to_block = Math.min(fetch_to_block, current_block - 10)
-
-		    	console.log("Fetching logs from block " + data.last_fetched_block + " to " + fetch_to_block + "...")
-
-		    	var wmc_card_contract = new web3.eth.Contract(wmc_card_abi, wmc_card_address);	    	
-
-				wmc_card_contract.getPastEvents('DepositCardAndMintToken', {
-				    filter: {},
-				    fromBlock : data.last_fetched_block,
-					toBlock :   fetch_to_block
-				}, function(error, logs){ 
-					if (error === null) {
-						for (var i = 0; i < logs.length; i++) {
-							var eventLog = logs[i]
-						
-							var cardId = eventLog.returnValues.cardId;
-
-							console.log(cardId + " Deposited")							
-
-							// TODO kick off a processing task which looks up the metadata on IPFS
-							// TODO kick off a tweet task
-						}
-					} else {
-						console.log(error);
-					}
-
-					update_last_fetched_block(data.last_fetched_block_doc_ref, fetch_to_block + 1).then(function() {
-						res.status(200).send('{}').end();
-						console.log("Done");
-					})
-				});
-			} else {
-				console.log(error)
-			}
-		});	  
-  	})
+	refresh_internal(modeType.DEPOSIT, res)	
 });
 
 // Start the server
