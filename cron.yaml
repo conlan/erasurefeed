@@ -1,4 +1,9 @@
 cron:
-- description: "regular refresh job"
-  url: /task/refresh
+
+- description: "regular refresh job for burn events"
+  url: /task/refresh/burns
+  schedule: every 300 hours
+
+- description: "regular refresh job for deposit events"
+  url: /task/refresh/deposits
   schedule: every 300 hours
