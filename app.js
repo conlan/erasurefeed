@@ -11,7 +11,7 @@ const task_client = new v2beta3.CloudTasksClient();
 const task_parent = task_client.queuePath('erasure-feed', 'us-central1', 'my-queue');
 
 const Twitter = require('twitter');
-// const twitter_client = new Twitter(JSON.parse(fs.readFileSync('twitter_credentials.json')));
+const twitter_client = new Twitter(JSON.parse(fs.readFileSync('twitter_credentials.json')));
 
 // TODO pull out into settings file
 var infura_project_id = ""
@@ -273,7 +273,8 @@ app.post('/task/process/card', (req, original_res) => {
 	  console.log("Scheduling tweet: " + status)
 
 	  var payload = {
-	  	status : status
+	  	status : status,
+	  	image_url : card_image_url
 	  }		
 
 	  schedule_task('/task/tweet', 5, payload);
@@ -285,22 +286,48 @@ app.post('/task/process/card', (req, original_res) => {
 	})
 });
 
-app.get('/task/tweet', (req, res) => {
-	var tweet_status = parseInt(req.body.status)
-
-	if (tweet_status !== undefined) {
-		console.log(tweet_status)
-		// twitter_client.post('statuses/update', {status: req.query.status}, function(error, tweet, response) {
-		//   	if(error) {
-		//   		console.log(error)
-		//   	} else {  			
-  // 				console.log(tweet);  // Tweet body.
-		//   		console.log(response);  // Raw response object.
-		//   	}
-		// });
-	} else {
-		console.log("No tweet status found!")
+app.post('/task/tweet', (req, res) => {
+	if (Buffer.isBuffer(req.body)) {		
+		req.body = JSON.parse(req.body)
 	}
+
+	var tweet_status = req.body.status
+	var tweet_image_url = req.body.image_url
+
+	// Load the image
+	var request = require('request');
+
+	console.log("Downloading image from: " + tweet_image_url)
+
+	request.get({
+			url : tweet_image_url,
+			encoding : null
+		}, function (error, response, body) {
+		
+		console.log("received status " + response.statusCode)
+		
+	    if (!error && response.statusCode == 200) {	       
+	    	
+	    	console.log("Uploading media...")
+
+	        twitter_client.post('media/upload', {media: body}, function(error, media, response) {
+	        				  	
+			  	if (!error) {
+			    	// tweet it
+			    	var status = {
+			    	  status: tweet_status,
+			    	  media_ids: media.media_id_string // Pass the media id string
+			    	}
+
+				    twitter_client.post('statuses/update', status, function(error, tweet, response) {
+				      if (!error) {
+				        console.log(tweet);
+				      }
+				    });
+			  	}
+			});
+	    }
+	});	
 
 	res.status(200).send('{}').end();
 })
