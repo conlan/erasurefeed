@@ -24,8 +24,14 @@ const web3 = new Web3(new Web3.providers.HttpProvider('https://mainnet.infura.io
 
 const express = require('express');
 var bodyParser = require('body-parser')
+
 const app = express();
+
 app.use(bodyParser.json())
+app.use(bodyParser.raw({
+    type: 'application/octet-stream',
+    limit: '10mb'
+}));
 
 const LOG_FETCH_COUNT = 250;
 
@@ -86,18 +92,11 @@ async function schedule_task(relative_uri, delay_in_seconds, payload) {
 			seconds: delay_in_seconds + Date.now() / 1000,
     	}
     };
-
- 	// task.scheduleTime = {
-  //     seconds: delay_in_seconds + Date.now() / 1000,
-  //   };
 		
     const request = {
     	parent: task_parent,
     	task: task,
   	}
-
-  	console.log('Sending task:');
-  	console.log(task);
 
   	const [response] = await task_client.createTask(request);
   	const name = response.name;
@@ -179,9 +178,15 @@ function clean_collection_name(collection) {
 }
 
 app.post('/task/process/card', (req, original_res) => {
+	if (Buffer.isBuffer(req.body)) {		
+		req.body = JSON.parse(req.body)
+	}
+	
 	var card_id = parseInt(req.body.card_id)
 	
 	var mode = req.body.mode
+	
+	console.log("Processing card: " + card_id)
 
 	// fetch the card details from marble API
 	var url = "https://ws.marble.cards/task/card_index/get_card_detail_task"
@@ -208,39 +213,48 @@ app.post('/task/process/card', (req, original_res) => {
 
 	  var status_tokens = []
 
+	  // append a different emoji if it was a deposit or burn event
 	  if (mode == modeType.DEPOSIT) {
 	  	status_tokens.push("🎁 \"")
 	  }	else if (mode == modeType.BURN) {
 	  	status_tokens.push("🔥 \"")
 	  }
 
+	  // append the title
 	  status_tokens.push(card_title)
 	  status_tokens.push("\"")
 
+	  // append gold medal if so
 	  if (is_gold_card) {
 	  	status_tokens.push(" 🥇")
 	  }
 	  status_tokens.push("\n")
 
+	  // append card id
 	  status_tokens.push("🃏 #")
 	  status_tokens.push(card_id)
 	  status_tokens.push("\n")
 
+	  // append card level
 	  status_tokens.push("⚔️ ")
 	  status_tokens.push(card_level)
 	  status_tokens.push("\n")
 
+	  // append collection and number
 	  status_tokens.push("📋 ")
 	  status_tokens.push(collection)
 	  status_tokens.push(" #")
 	  status_tokens.push(collection_number)
 	  status_tokens.push("\n")
 	  
-
+	  // append link on how to get this card
 	  status_tokens.push("🏦 ")
+
+	  // if deposited, then go directly to wmc
 	  if (mode == modeType.DEPOSIT) {
 	  	status_tokens.push("https://wrappedmarble.cards")
 	  } else if (mode == modeType.BURN) {
+	  	// else if it was redeemed, go to opensea to make a bid
 	  	status_tokens.push("https://opensea.io/assets/0x1d963688fe2209a98db35c67a041524822cf04ff/")	  	
 	  	status_tokens.push(card_id)
 	  	status_tokens.push("?ref=")
@@ -248,24 +262,34 @@ app.post('/task/process/card', (req, original_res) => {
 	  }
 	  status_tokens.push("\n")
 
+	  // lastly, the marble card link on the home site
 	  status_tokens.push("🔗 ")
 	  status_tokens.push("https://marble.cards/card/")
   	  status_tokens.push(card_id)
 	  status_tokens.push(" #MarbleCards #NFT")
 
-	  console.log(status_tokens.join(""))
+	  var status = status_tokens.join("")
 
+	  console.log("Scheduling tweet: " + status)
+
+	  var payload = {
+	  	status : status
+	  }		
+
+	  schedule_task('/task/tweet', 5, payload);
+	  
 	  original_res.status(200).send('{}').end();
 	}).catch((error) => {
 	  console.error(error)
 	  original_res.status(200).send('{}').end();
-	})	
+	})
 });
 
 app.get('/task/tweet', (req, res) => {
-	var tweet_status = req.query.status;
+	var tweet_status = parseInt(req.body.status)
+
 	if (tweet_status !== undefined) {
-		// TODO
+		console.log(tweet_status)
 		// twitter_client.post('statuses/update', {status: req.query.status}, function(error, tweet, response) {
 		//   	if(error) {
 		//   		console.log(error)
