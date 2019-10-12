@@ -4,6 +4,8 @@ const fs = require('fs');
 const {Firestore} = require('@google-cloud/firestore');
 const firestore = new Firestore();
 
+const axios = require('axios')
+
 const {v2beta3} = require('@google-cloud/tasks');
 const task_client = new v2beta3.CloudTasksClient();
 const task_parent = task_client.queuePath('erasure-feed', 'us-central1', 'my-queue');
@@ -21,7 +23,9 @@ const Web3 = require('web3')
 const web3 = new Web3(new Web3.providers.HttpProvider('https://mainnet.infura.io/v3/' + infura_project_id))
 
 const express = require('express');
+var bodyParser = require('body-parser')
 const app = express();
+app.use(bodyParser.json())
 
 const LOG_FETCH_COUNT = 250;
 
@@ -78,11 +82,14 @@ async function schedule_task(relative_uri, delay_in_seconds, payload) {
             headers: headers,
             body: Buffer.from(JSON.stringify(payload)).toString('base64')
         },
+        scheduleTime : {
+			seconds: delay_in_seconds + Date.now() / 1000,
+    	}
     };
 
- 	task.scheduleTime = {
-      seconds: delay_in_seconds + Date.now() / 1000,
-    };
+ 	// task.scheduleTime = {
+  //     seconds: delay_in_seconds + Date.now() / 1000,
+  //   };
 		
     const request = {
     	parent: task_parent,
@@ -118,8 +125,10 @@ function refresh_internal(mode, res) {
 				}, function(error, logs){ 
 					if (error === null) {
 						var delay_in_seconds = 30;
+						var delay_between_process_in_seconds = 70; // give more than a minute between tweets
 
 						for (var i = 0; i < logs.length; i++) {
+
 							// build the payload
 							var payload = {
 								card_id : logs[i].returnValues.cardId,
@@ -129,14 +138,13 @@ function refresh_internal(mode, res) {
 							// kick off a processing task which looks up the card metadata 
 							schedule_task('/task/process/card', delay_in_seconds, payload);
 
-							delay_in_seconds += 70; // give more than a minute between tweets
-
-							break
+							delay_in_seconds += delay_between_process_in_seconds; 
 						}
 					} else {
 						console.log(error);
 					}
 
+					// update the last fetched block and return
 					update_last_fetched_block(data.last_fetched_block_doc_ref, fetch_to_block + 1).then(function() {
 						res.status(200).send('{}').end();
 						console.log("Done");
@@ -153,8 +161,105 @@ app.get('/', (req, res) => {
 	res.status(200).send('{}').end();
 });
 
-app.post('/task/process/card', (req, res) => {	
-	res.status(200).send('{}').end();
+const MAX_TITLE_LENGTH = 97;
+const OPEN_SEA_REFERRAL = "Jack_Sparrow"
+
+function clean_collection_name(collection) {
+	var domains = [".com", ".gov", ".io"]
+
+	// remove any domain suffixes to be cleaner
+	for (var i = 0; i < domains.length; i++) {
+		if (collection.endsWith(domains[i])) {
+			collection = collection.substring(0, collection.length - domains[i].length)
+			break	
+		}
+	}
+
+	return collection;
+}
+
+app.post('/task/process/card', (req, original_res) => {
+	var card_id = parseInt(req.body.card_id)
+	
+	var mode = req.body.mode
+
+	// fetch the card details from marble API
+	var url = "https://ws.marble.cards/task/card_index/get_card_detail_task"
+
+	axios.post(url, {
+	  nft_id : card_id
+	}).then((res) => {
+	  console.log(res.data)	
+
+	  var card_title = res.data.title;
+
+	  // truncate the title down
+	  if (card_title.length > MAX_TITLE_LENGTH) {
+	  	card_title = card_title.substring(0, MAX_TITLE_LENGTH) + "..."
+	  }
+
+	  var card_level = res.data.level;
+	  var card_id = res.data.nft_id;
+	  var card_image_url = res.data.image_2k;
+
+	  var collection = clean_collection_name(res.data.domain_collection.domain_name)
+	  var collection_number = res.data.domain_collection.collection_number
+	  var is_gold_card = res.data.domain_collection.is_gold_card;
+
+	  var status_tokens = []
+
+	  if (mode == modeType.DEPOSIT) {
+	  	status_tokens.push("🎁 \"")
+	  }	else if (mode == modeType.BURN) {
+	  	status_tokens.push("🔥 \"")
+	  }
+
+	  status_tokens.push(card_title)
+	  status_tokens.push("\"")
+
+	  if (is_gold_card) {
+	  	status_tokens.push(" 🥇")
+	  }
+	  status_tokens.push("\n")
+
+	  status_tokens.push("🃏 #")
+	  status_tokens.push(card_id)
+	  status_tokens.push("\n")
+
+	  status_tokens.push("⚔️ ")
+	  status_tokens.push(card_level)
+	  status_tokens.push("\n")
+
+	  status_tokens.push("📋 ")
+	  status_tokens.push(collection)
+	  status_tokens.push(" #")
+	  status_tokens.push(collection_number)
+	  status_tokens.push("\n")
+	  
+
+	  status_tokens.push("🏦 ")
+	  if (mode == modeType.DEPOSIT) {
+	  	status_tokens.push("https://wrappedmarble.cards")
+	  } else if (mode == modeType.BURN) {
+	  	status_tokens.push("https://opensea.io/assets/0x1d963688fe2209a98db35c67a041524822cf04ff/")	  	
+	  	status_tokens.push(card_id)
+	  	status_tokens.push("?ref=")
+	  	status_tokens.push(OPEN_SEA_REFERRAL)
+	  }
+	  status_tokens.push("\n")
+
+	  status_tokens.push("🔗 ")
+	  status_tokens.push("https://marble.cards/card/")
+  	  status_tokens.push(card_id)
+	  status_tokens.push(" #MarbleCards #NFT")
+
+	  console.log(status_tokens.join(""))
+
+	  original_res.status(200).send('{}').end();
+	}).catch((error) => {
+	  console.error(error)
+	  original_res.status(200).send('{}').end();
+	})	
 });
 
 app.get('/task/tweet', (req, res) => {
@@ -190,6 +295,5 @@ app.listen(PORT, () => {
   console.log(`App listening on port ${PORT}`);
   console.log('Press Ctrl+C to quit.');
 });
-// [END gae_node_request_example]
 
 module.exports = app;
