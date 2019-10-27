@@ -14,7 +14,7 @@ const Twitter = require('twitter');
 const twitter_client = new Twitter(JSON.parse(fs.readFileSync('twitter_credentials.json')));
 
 // TODO pull out into settings file
-var infura_project_id = ""
+var infura_project_id = "e6fbb7c91658422b8582e035657141bf"
 let wmc_card_abi = JSON.parse(fs.readFileSync('wmc_card_abi.json'));
 let wmc_card_genesis_block_num = 8151030;
 let wmc_card_address = "0x8AedB297FED4b6884b808ee61fAf0837713670d0"
@@ -124,7 +124,7 @@ function refresh_internal(mode, res) {
 				}, function(error, logs){ 
 					if (error === null) {
 						var delay_in_seconds = 30;
-						var delay_between_process_in_seconds = 70; // give more than a minute between tweets
+						var delay_between_process_in_seconds = 100; // give more than a minute between tweets
 
 						for (var i = 0; i < logs.length; i++) {
 
@@ -164,7 +164,7 @@ const MAX_TITLE_LENGTH = 97;
 const OPEN_SEA_REFERRAL = "Jack_Sparrow"
 
 function clean_collection_name(collection) {
-	var domains = [".com", ".gov", ".io"]
+	var domains = [".com", ".gov", ".io", ".co"]
 
 	// remove any domain suffixes to be cleaner
 	for (var i = 0; i < domains.length; i++) {
@@ -277,7 +277,9 @@ app.post('/task/process/card', (req, original_res) => {
 	  	image_url : card_image_url
 	  }		
 
-	  schedule_task('/task/tweet', 5, payload);
+	  var delay_in_seconds = 5;
+	  
+	  schedule_task('/task/tweet', delay_in_seconds, payload);
 	  
 	  original_res.status(200).send('{}').end();
 	}).catch((error) => {
